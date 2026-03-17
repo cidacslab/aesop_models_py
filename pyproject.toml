@@ -1,0 +1,11 @@
+[project]
+name = "aesop-models-py"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=3.0.1",
+    "polars>=1.39.2",
+    "pyarrow>=23.0.1",
+]
