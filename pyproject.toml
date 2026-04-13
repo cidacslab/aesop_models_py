@@ -1,7 +1,12 @@
+[build-system]
+requires = ["hatchling"]          # uv usa hatchling por padrão
+build-backend = "hatchling.build"
+
+
 [project]
 name = "aesop-models-py"
 version = "0.1.0"
-description = "Add your description here"
+# description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -11,3 +16,6 @@ dependencies = [
     "pyarrow>=23.0.1",
     "statsmodels>=0.14.6",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aesop"]
