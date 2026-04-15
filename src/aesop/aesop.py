@@ -6,7 +6,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from scipy.stats import friedmanchisquare
 
-from ff_models import (
+from .ff_models import (
     find_best_formula,
     lags_combination_vars,
     harmonic,
