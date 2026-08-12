@@ -1,18 +1,18 @@
+import warnings
+
+import numpy as np
 import pandas as pd
 import polars as pl
-import numpy as np
-import warnings
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from scipy.stats import friedmanchisquare
 
 from .ff_models import (
     find_best_formula,
-    lags_combination_vars,
     harmonic,
+    lags_combination_vars,
     sliding_window_pvalues,
 )
-
 
 warnings.filterwarnings("ignore")
 
@@ -22,7 +22,7 @@ def evi(
     m: int = 5,
     r_a: int = 4,
     mu: int = 8,
-    c: float | int = 0.2,
+    c: float = 0.2,
 ):
     series = pl.Series(series).alias("series")
     df = pl.DataFrame(series)
@@ -36,7 +36,9 @@ def evi(
             .fill_null(0)
             .alias("tseries")
         )
-        .with_columns(pl.col("tseries").rolling_std(window_size=m).alias("std_windows"))
+        .with_columns(
+            pl.col("tseries").rolling_std(window_size=m).alias("std_windows")
+        )
         .with_columns(
             (
                 (pl.col("std_windows") - pl.col("std_windows").shift())
@@ -91,7 +93,9 @@ def evi(
         .with_columns(
             (
                 pl.col("tseries")
-                + pl.col("k_opt").abs() * (1 + c) * pl.col("std_windows").shift()
+                + pl.col("k_opt").abs()
+                * (1 + c)
+                * pl.col("std_windows").shift()
             )
             .fill_nan(0)
             .fill_null(0)
@@ -112,13 +116,18 @@ def evi(
 
 def compute_negbi_spc(serie: pl.Series):
     data: list[pl.Series] = []
-    serie_4 = serie.rolling_mean(window_size=4, min_samples=1).alias(f"{serie.name}_4")
+    serie_4 = serie.rolling_mean(window_size=4, min_samples=1).alias(
+        f"{serie.name}_4"
+    )
     data.extend([serie, serie_4])
     for lag in range(1, 5):
         data.append(serie.shift(lag).alias(f"{serie.name}_lag_{lag}"))
 
     df = pl.DataFrame().with_columns(
-        *[pl.Series(name=column.name, values=column.to_numpy()) for column in data]
+        *[
+            pl.Series(name=column.name, values=column.to_numpy())
+            for column in data
+        ]
     )
     df = df.with_row_index("time_trend")
 
@@ -133,7 +142,9 @@ def compute_negbi_spc(serie: pl.Series):
         pl.lit(model.params["time_trend"]).alias(f"coef_negbi_{serie_4.name}"),
         pl.lit(model.bse["time_trend"]).alias(f"std_err_negbi_{serie_4.name}"),
         pl.lit(model.tvalues["time_trend"]).alias(f"z_negbi_{serie_4.name}"),
-        pl.lit(model.pvalues["time_trend"]).alias(f"p_values_negbi_{serie_4.name}"),
+        pl.lit(model.pvalues["time_trend"]).alias(
+            f"p_values_negbi_{serie_4.name}"
+        ),
         pl.lit(model.conf_int().loc["time_trend", 0]).alias(
             f"IC_low_negbi_{serie_4.name}"
         ),
@@ -142,9 +153,9 @@ def compute_negbi_spc(serie: pl.Series):
         ),
         pl.Series(values=pred, name=f"trend_line_negbi_{serie_4.name}"),
     ).with_columns(
-        (pl.col(serie_4.name) - pl.col(f"trend_line_negbi_{serie_4.name}")).alias(
-            f"dtrend_{serie.name}_negbi"
-        )
+        (
+            pl.col(serie_4.name) - pl.col(f"trend_line_negbi_{serie_4.name}")
+        ).alias(f"dtrend_{serie.name}_negbi")
     )
 
     p = len(df) // 2
@@ -189,7 +200,10 @@ def compute_negbi_spc(serie: pl.Series):
     df3 = harmonic(df3, serie_4.name)
     if df3 is not None:
         formulas_df3 = lags_combination_vars(
-            serie_4.name, serie.name, range(1, 4), formula_component="Reconstructed"
+            serie_4.name,
+            serie.name,
+            range(1, 4),
+            formula_component="Reconstructed",
         )
         df3 = pl.from_pandas(find_best_formula(df3, serie.name, formulas_df3))
         if df3.shape[0]:
