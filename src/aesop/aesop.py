@@ -5,7 +5,7 @@ import pandas as pd
 import polars as pl
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from scipy.stats import friedmanchisquare
+from scipy.stats import friedmanchisquare, nbinom
 
 from .ff_models import (
     find_best_formula,
