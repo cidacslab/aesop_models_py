@@ -109,9 +109,7 @@ def evi(
             .alias("alarm")
         )
     )
-    return df.select("alarm").to_series().to_list(), df.select(
-        "upperbound"
-    ).to_series().to_list()
+    return df.select("alarm").to_series().to_list()
 
 
 def compute_negbi_spc(serie: pl.Series):
