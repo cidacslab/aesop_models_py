@@ -1,17 +1,22 @@
-from typing import Any, Generator
-import polars as pl
-import pandas as pd
-from numba import njit
+from collections.abc import Generator
+from typing import Any
+
 import numpy as np
-from scipy.fft import fft, ifft
-from scipy.stats import invgamma
+import pandas as pd
+import polars as pl
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
+from numba import njit
+from scipy.fft import fft, ifft
+from scipy.stats import invgamma
 
 
 def lags_combination_vars(
-    dependent_variable: str, serie: str, lags_variable: range, formula_component=None
-) -> Generator[str, Any, None]:
+    dependent_variable: str,
+    serie: str,
+    lags_variable: range,
+    formula_component=None,
+) -> Generator[str, Any]:
     lags_var_comb = [f"{serie}_lag_{lag}" for lag in lags_variable]
     cumulative_sums_var = [
         " + ".join(lags_var_comb[:i]) for i in range(1, len(lags_var_comb) + 1)
@@ -20,7 +25,9 @@ def lags_combination_vars(
         for terms in cumulative_sums_var:
             components = [terms]
             formula_components = (
-                formula_component + " + " + " + ".join(filter(None, components))
+                formula_component
+                + " + "
+                + " + ".join(filter(None, components))
             )
             formula = f"{dependent_variable} ~ {formula_components}"
             yield formula
@@ -46,7 +53,9 @@ def fill_nan_values(df, serie):
 
 
 def find_best_formula(
-    df: pd.DataFrame | pl.DataFrame, serie: str, formulas: list[str] | Generator[str]
+    df: pd.DataFrame | pl.DataFrame,
+    serie: str,
+    formulas: list[str] | Generator[str],
 ) -> pd.DataFrame:
     df = df.to_pandas() if isinstance(df, pl.DataFrame) else df
     df = fill_nan_values(df, serie)
@@ -71,12 +80,16 @@ def find_best_formula(
                 df[f"residuals_{serie}_only"] = model.resid_deviance
                 df[f"sigma_{serie}_only"] = np.std(model.resid_deviance)
                 df[f"sigma__{serie}_only"] = np.std(model.fittedvalues)
-                df[f"sigma_t_{serie}_only"] = model.fittedvalues.rolling(window=5).std()
+                df[f"sigma_t_{serie}_only"] = model.fittedvalues.rolling(
+                    window=5
+                ).std()
                 df["limit"] = (
-                    df[f"fitted_values_{serie}_only"] + w * df[f"sigma_t_{serie}_only"]
+                    df[f"fitted_values_{serie}_only"]
+                    + w * df[f"sigma_t_{serie}_only"]
                 )
                 df[f"LCL_{serie}_only"] = (
-                    df[f"fitted_values_{serie}_only"] - w * df[f"sigma_t_{serie}_only"]
+                    df[f"fitted_values_{serie}_only"]
+                    - w * df[f"sigma_t_{serie}_only"]
                 )
                 df["alarm"] = (df[f"{serie}_4"] >= df["limit"]).astype(int)
                 df[f"out_of_limits_below_{serie}_only"] = (
@@ -91,7 +104,9 @@ def find_best_formula(
 def fourier_series(t, a0, an, bn, N):
     result = a0
     for n, (a, b) in enumerate(zip(an, bn), start=1):
-        result += a * np.cos(2 * np.pi * n * t / N) + b * np.sin(2 * np.pi * n * t / N)
+        result += a * np.cos(2 * np.pi * n * t / N) + b * np.sin(
+            2 * np.pi * n * t / N
+        )
     return result
 
 
@@ -173,10 +188,12 @@ def harmonic(df: pd.DataFrame | pl.DataFrame, col: str) -> None | pd.DataFrame:
         df.Reconstructed_log = df.Reconstructed_log.fillna(0)
 
         v1 = df.loc[
-            ~df["Reconstructed_log"].isin([np.inf, -np.inf]), "Reconstructed_log"
+            ~df["Reconstructed_log"].isin([np.inf, -np.inf]),
+            "Reconstructed_log",
         ].max()
         v2 = df.loc[
-            ~df["Reconstructed_log"].isin([np.inf, -np.inf]), "Reconstructed_log"
+            ~df["Reconstructed_log"].isin([np.inf, -np.inf]),
+            "Reconstructed_log",
         ].min()
         df["Reconstructed_log"] = df["Reconstructed_log"].replace(
             [np.inf, -np.inf], [v1, v2]
@@ -193,7 +210,10 @@ def exponential_model(t, beta, gamma, t0):
 @njit
 def compute_log_likelihood(y, t, beta, gamma, sigma, t0):
     y_pred = exponential_model(t, beta, gamma, t0)
-    res = -0.5 * np.log(2 * np.pi * sigma**2) - 0.5 * ((y - y_pred) ** 2) / sigma**2
+    res = (
+        -0.5 * np.log(2 * np.pi * sigma**2)
+        - 0.5 * ((y - y_pred) ** 2) / sigma**2
+    )
     return res.sum()
 
 
@@ -221,11 +241,17 @@ def metropolis_hastings(
     sigma = 1.0
 
     for _ in range(n_samples):
-        beta_prop = np.clip(np.random.normal(beta, proposal_sd[0]), *beta_range)
-        gamma_prop = np.clip(np.random.normal(gamma, proposal_sd[1]), *gamma_range)
+        beta_prop = np.clip(
+            np.random.normal(beta, proposal_sd[0]), *beta_range
+        )
+        gamma_prop = np.clip(
+            np.random.normal(gamma, proposal_sd[1]), *gamma_range
+        )
 
         loglike_current = compute_log_likelihood(y, t, beta, gamma, sigma, t0)
-        loglike_prop = compute_log_likelihood(y, t, beta_prop, gamma_prop, sigma, t0)
+        loglike_prop = compute_log_likelihood(
+            y, t, beta_prop, gamma_prop, sigma, t0
+        )
 
         accept_prob = np.exp(loglike_prop - loglike_current)
         if np.random.rand() < accept_prob:
@@ -279,7 +305,9 @@ def metropolis_hastings_nb(
 
         # ====== passo MH ======
         ll_curr = compute_log_likelihood(y, t, beta, gamma, sigma, t0)
-        ll_prop = compute_log_likelihood(y, t, beta_prop, gamma_prop, sigma, t0)
+        ll_prop = compute_log_likelihood(
+            y, t, beta_prop, gamma_prop, sigma, t0
+        )
 
         if np.log(np.random.rand()) < (ll_prop - ll_curr):
             beta, gamma = beta_prop, gamma_prop
