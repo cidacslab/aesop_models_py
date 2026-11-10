@@ -236,3 +236,112 @@ def bayes(serie: list[int]):
     nums = (len(serie) * -1) if len(serie) < (nums * -1) else nums
     pvals = sliding_window_pvalues(serie[nums:], window=8)
     return (1 - pvals).tolist()
+
+
+def calc_excess(
+    series: str,
+    start_year: int,
+    min_year: int,
+    max_year: int,
+    data: pl.DataFrame | pd.DataFrame,
+    col_cat: str,
+    col_year: str,
+    col_week: str,
+    fallback_dispersion=1_000,
+) -> pl.DataFrame | pd.DataFrame:
+
+    df = pl.DataFrame(data)
+
+    lst_range = "|".join(map(str, list(range(start_year, max_year))))
+
+    for cur_year in reversed(range(min_year, max_year + 1)):
+        max_year = cur_year - 1
+        df_gp = (
+            df.filter(
+                (pl.col(col_year) >= start_year)
+                & (pl.col(col_year) <= max_year)
+            )
+            .with_columns(
+                pl.col(series)
+                .mean()
+                .over([col_cat, col_week])
+                .fill_null(0)
+                .alias(f"expected_cases_{max_year}"),
+                pl.col(series)
+                .var(ddof=1)
+                .over([col_cat, col_week])
+                .alias("var"),
+            )
+            .with_columns(
+                pl.when(pl.col("var") > pl.col(f"expected_cases_{max_year}"))
+                .then(
+                    pl.col(f"expected_cases_{max_year}") ** 2
+                    / (pl.col("var") - pl.col(f"expected_cases_{max_year}"))
+                )
+                .otherwise(pl.lit(fallback_dispersion))
+                .alias("r")
+            )
+            .with_columns(
+                (
+                    pl.col("r")
+                    / (pl.col("r") + pl.col(f"expected_cases_{max_year}"))
+                ).alias("p")
+            )
+            .with_columns(
+                pl.map_groups(
+                    [pl.lit(0.025), "r", "p"],
+                    function=lambda cols: nbinom.ppf(
+                        cols[0], cols[1], cols[2]
+                    ),
+                ).alias(f"ci_lower_95_{max_year}"),
+                pl.map_groups(
+                    [pl.lit(0.975), "r", "p"],
+                    function=lambda cols: nbinom.ppf(
+                        cols[0], cols[1], cols[2]
+                    ),
+                ).alias(f"ci_upper_95_{max_year}"),
+            )
+            .with_columns(pl.lit(cur_year).alias(col_year))
+            .select(
+                col_cat,
+                col_year,
+                col_week,
+                f"expected_cases_{max_year}",
+                f"ci_lower_95_{max_year}",
+                f"ci_upper_95_{max_year}",
+            )
+            .unique(subset=[col_cat, col_year, col_week])
+        )
+        df = df.join(df_gp, on=[col_cat, col_year, col_week], how="left")
+
+    df = (
+        df.with_columns(
+            pl.sum_horizontal(
+                pl.col(r"^expected_cases_.*$").alias(f"expected_{series}")
+            ),
+            pl.sum_horizontal(
+                pl.col(rf"^ci_lower_95_({lst_range})$").alias(
+                    f"ci_lower_95_{series}"
+                )
+            ),
+            pl.sum_horizontal(
+                pl.col(rf"^ci_upper_95_({lst_range})$").alias(
+                    f"ci_upper_95_{series}"
+                )
+            ),
+        )
+        .with_columns(
+            (
+                (pl.col(series) - pl.col(f"expected_{series}"))
+                * 100
+                / pl.col(series)
+            )
+            .clip(0)
+            .alias(f"exc_{series}")
+        )
+        .drop(
+            df.select(pl.col(rf"^ci_(lower|upper)_95_({lst_range})$")).columns
+        )
+    )
+
+    return df
